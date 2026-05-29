@@ -15,7 +15,7 @@
 На сервере в файле `.env` должны быть реальные доступы Vendotek/TMS:
 
 ```env
-PORT=3100
+PORT=8080
 VENDOTEK_HOST=https://my.vendotek.com
 VENDOTEK_EMAIL=...
 VENDOTEK_PASSWORD=...
@@ -29,4 +29,4 @@ SESSION_SECRET=change-me
 
 На сервере должны быть установлены Node.js 18+, npm и pm2. Если pm2 отсутствует, workflow попробует установить его сам.
 
-Приложение запускается на порту `3100`.
+Приложение запускается на порту `8080`.
