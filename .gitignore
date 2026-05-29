@@ -9,3 +9,4 @@ android/.gradle/
 android/.gradle-local/
 android/app/build/
 android/local.properties
+.deploy-tmp/

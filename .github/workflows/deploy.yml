@@ -13,16 +13,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure SSH
+      - name: Install SSH tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass rsync
+
+      - name: Trust host
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "${{ secrets.SERVER_PORT || '22' }}" "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.SERVER_PORT }}" "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Deploy files
+        env:
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
         run: |
-          rsync -az --delete \
+          sshpass -e rsync -az --delete \
             --exclude ".git" \
             --exclude ".github" \
             --exclude ".env" \
@@ -34,12 +39,16 @@ jobs:
             --exclude "android/.gradle" \
             --exclude "android/.gradle-local" \
             --exclude "android/app/build" \
-            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.SERVER_PORT || '22' }}" \
+            --exclude "android/local.properties" \
+            --exclude ".deploy-tmp" \
+            -e "ssh -p ${{ secrets.SERVER_PORT }}" \
             ./ "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}/"
 
       - name: Install and restart
+        env:
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${{ secrets.SERVER_PORT || '22' }}" "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
+          sshpass -e ssh -p "${{ secrets.SERVER_PORT }}" "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
             set -e
             cd "${{ secrets.DEPLOY_PATH }}"
             npm ci --omit=dev
