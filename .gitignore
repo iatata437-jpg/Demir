@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.log
+*.apk
+*.zip
+android-sdk/
+jdk8/
+android/.gradle/
+android/.gradle-local/
+android/app/build/
+android/local.properties

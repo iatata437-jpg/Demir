@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ secrets.SERVER_PORT || '22' }}" "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy files
+        run: |
+          rsync -az --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude ".env" \
+            --exclude "node_modules" \
+            --exclude "android-sdk" \
+            --exclude "jdk8" \
+            --exclude "*.zip" \
+            --exclude "*.apk" \
+            --exclude "android/.gradle" \
+            --exclude "android/.gradle-local" \
+            --exclude "android/app/build" \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.SERVER_PORT || '22' }}" \
+            ./ "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+
+      - name: Install and restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.SERVER_PORT || '22' }}" "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
+            set -e
+            cd "${{ secrets.DEPLOY_PATH }}"
+            npm ci --omit=dev
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 startOrReload ecosystem.config.cjs --env production
+              pm2 save
+            else
+              npm install -g pm2
+              pm2 startOrReload ecosystem.config.cjs --env production
+              pm2 save
+            fi
+          EOF

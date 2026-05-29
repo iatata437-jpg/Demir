@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Demir Bank: безналичные отчеты</title>
+    <link rel="icon" type="image/png" href="/assets/demir-logo.png" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <section class="login-screen" id="loginScreen">
+      <form class="login-card" id="loginForm">
+        <div class="brand">
+          <img src="/assets/demir-logo.png" alt="Demir Bank" />
+          <div>
+            <h1>Demir Bank</h1>
+            <p>Отчеты по безналичным операциям TMS</p>
+          </div>
+        </div>
+        <label>
+          Корпоративная почта
+          <input id="email" type="email" autocomplete="username" required />
+        </label>
+        <label>
+          Пароль доступа
+          <input id="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Войти</button>
+        <p class="message" id="loginMessage"></p>
+      </form>
+    </section>
+
+    <main class="app hidden" id="app">
+      <header class="topbar">
+        <div class="header-brand">
+          <img src="/assets/demir-logo.png" alt="Demir Bank" />
+          <div>
+            <span class="brand-kicker">Demir Kyrgyz International Bank</span>
+            <h1>Безналичные отчеты</h1>
+            <p>Проект Vendotek/TMS: <strong>bank-demir</strong></p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span class="user" id="userEmail"></span>
+          <button type="button" class="ghost" id="logoutButton">Выйти</button>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <label>
+          С
+          <input id="fromDate" type="date" />
+        </label>
+        <label>
+          По
+          <input id="toDate" type="date" />
+        </label>
+        <button type="button" class="ghost" id="exportReport">Выгрузить XLSX</button>
+        <button type="button" class="ghost" id="loadClients">Клиенты TMS</button>
+        <button type="button" class="ghost" id="exportClients">Выгрузить клиентов</button>
+      </section>
+
+      <section class="status" id="status">Выберите период и сформируйте отчет.</section>
+      <section class="metrics" id="metrics"></section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Карточки ИП</h2>
+          <input id="cardSearch" type="search" placeholder="Поиск по наименованию TMS" />
+        </div>
+        <div class="client-cards" id="clientCards"></div>
+      </section>
+
+      <section class="panel hidden" id="clientDetail">
+        <div class="panel-head">
+          <div>
+            <button type="button" class="ghost compact-button" id="backToCards">Назад к карточкам</button>
+            <h2 id="clientTitle">Клиент</h2>
+            <p class="muted" id="clientMeta"></p>
+          </div>
+          <div class="detail-actions">
+            <button type="button" id="buildClientReport">Отчет по клиенту</button>
+            <button type="button" class="ghost" id="exportClientReport">Выгрузить TSO CSV</button>
+            <button type="button" class="ghost" id="exportClientExcel">Скачать Excel</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Сводка по клиентам</h2>
+          <input id="search" type="search" placeholder="Поиск по клиенту или TMS" />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Клиент</th>
+                <th>TMS</th>
+                <th>Терминалы</th>
+                <th>Операции</th>
+                <th>Успешные</th>
+                <th>Безнал</th>
+              </tr>
+            </thead>
+            <tbody id="clientsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>TSO: итоговый отчет по организации</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Unit ID</th>
+                <th>Terminal ID</th>
+                <th>Location</th>
+                <th>Безнал операции</th>
+                <th>Cashless</th>
+                <th>Errors</th>
+              </tr>
+            </thead>
+            <tbody id="transactionsTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

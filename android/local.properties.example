@@ -1,0 +1,4 @@
+sdk.dir=C\:\\Users\\user\\AppData\\Local\\Android\\Sdk
+tms.host=https://my.vendotek.com
+tms.email=your-vendotek-login@example.com
+tms.password=your-vendotek-password

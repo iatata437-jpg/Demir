@@ -1,0 +1,2 @@
+rootProject.name = "DemirReports"
+include ":app"

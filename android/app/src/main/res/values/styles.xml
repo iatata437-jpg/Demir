@@ -1,0 +1,9 @@
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/demir_red_dark</item>
+        <item name="android:navigationBarColor">@color/demir_red_dark</item>
+        <item name="android:windowBackground">@color/demir_background</item>
+    </style>
+</resources>

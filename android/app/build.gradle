@@ -1,0 +1,26 @@
+apply plugin: "com.android.application"
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+def tmsHost = localProps.getProperty("tms.host", System.getenv("TMS_HOST") ?: "https://my.vendotek.com")
+def tmsEmail = localProps.getProperty("tms.email", System.getenv("TMS_EMAIL") ?: "")
+def tmsPassword = localProps.getProperty("tms.password", System.getenv("TMS_PASSWORD") ?: "")
+
+android {
+    compileSdkVersion 30
+
+    defaultConfig {
+        applicationId "kg.demirbank.reports"
+        minSdkVersion 23
+        targetSdkVersion 30
+        versionCode 1
+        versionName "1.0.0"
+        buildConfigField "String", "TMS_HOST", "\"${tmsHost}\""
+        buildConfigField "String", "TMS_EMAIL", "\"${tmsEmail}\""
+        buildConfigField "String", "TMS_PASSWORD", "\"${tmsPassword}\""
+    }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "demir-cashless-reports",
+  "version": "1.0.0",
+  "description": "Cashless Vendotek reports for Demir bank employees",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

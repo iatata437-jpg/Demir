@@ -1,0 +1,332 @@
+let currentUser = null;
+let currentReport = null;
+let currentClients = [];
+let activeClient = null;
+
+const formatMoney = value => `${Number(value || 0).toLocaleString("ru-RU")} сом`;
+const formatDate = value => value ? new Date(value).toLocaleString("ru-RU") : "-";
+const formatDateOnly = date => {
+  const value = new Date(date);
+  value.setMinutes(value.getMinutes() - value.getTimezoneOffset());
+  return value.toISOString().slice(0, 10);
+};
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.message || "Ошибка запроса");
+  return payload;
+}
+
+function setDefaultDates() {
+  const now = new Date();
+  const from = new Date(now);
+  from.setDate(from.getDate() - 7);
+  if (!document.querySelector("#fromDate").value) document.querySelector("#fromDate").value = formatDateOnly(from);
+  if (!document.querySelector("#toDate").value) document.querySelector("#toDate").value = formatDateOnly(now);
+}
+
+function showApp(user) {
+  currentUser = user;
+  document.querySelector("#loginScreen").classList.add("hidden");
+  document.querySelector("#app").classList.remove("hidden");
+  document.querySelector("#userEmail").textContent = user.email;
+  setDefaultDates();
+  loadClients();
+}
+
+function showLogin() {
+  currentUser = null;
+  document.querySelector("#loginScreen").classList.remove("hidden");
+  document.querySelector("#app").classList.add("hidden");
+}
+
+async function bootstrap() {
+  try {
+    const payload = await requestJson("/api/me");
+    if (payload.user) showApp(payload.user);
+    else showLogin();
+  } catch {
+    showLogin();
+  }
+}
+
+async function login(event) {
+  event.preventDefault();
+  const message = document.querySelector("#loginMessage");
+  message.textContent = "";
+  message.classList.remove("error");
+  try {
+    const payload = await requestJson("/api/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: document.querySelector("#email").value,
+        password: document.querySelector("#password").value
+      })
+    });
+    showApp(payload.user);
+  } catch (error) {
+    message.textContent = error.message;
+    message.classList.add("error");
+  }
+}
+
+async function logout() {
+  await requestJson("/api/logout", { method: "POST" });
+  currentReport = null;
+  currentClients = [];
+  activeClient = null;
+  showLogin();
+}
+
+function reportParams() {
+  setDefaultDates();
+  return new URLSearchParams({
+    from: document.querySelector("#fromDate").value,
+    to: document.querySelector("#toDate").value
+  });
+}
+
+async function buildReport() {
+  const status = document.querySelector("#status");
+  status.textContent = "Загружаем данные из Vendotek/TMS...";
+  status.classList.remove("error");
+  try {
+    currentReport = await requestJson(`/api/report?${reportParams().toString()}`);
+    currentClients = currentReport.byClient.map(row => row.client);
+    renderReport();
+    status.textContent = `Отчет сформирован за период ${currentReport.period.from} - ${currentReport.period.to}.`;
+  } catch (error) {
+    status.textContent = error.message;
+    status.classList.add("error");
+  }
+}
+
+function exportReport() {
+  const params = reportParams();
+  params.set("format", "csv");
+  window.location.href = `/api/report?${params.toString()}`;
+}
+
+async function loadClients() {
+  const status = document.querySelector("#status");
+  status.textContent = "Загружаем клиентов проекта bank-demir из TMS...";
+  status.classList.remove("error");
+  try {
+    const payload = await requestJson("/api/clients");
+    currentClients = payload.clients || [];
+    currentReport = null;
+    activeClient = null;
+    document.querySelector("#clientDetail").classList.add("hidden");
+    renderClientCards();
+    renderClients();
+    const terminalTotal = currentClients.reduce((sum, client) => sum + Number(client.terminals?.length || 0), 0);
+    document.querySelector("#metrics").innerHTML = `
+      <article class="metric"><span>Проект</span><strong>${escapeHtml(payload.project || "bank-demir")}</strong></article>
+      <article class="metric"><span>Клиенты TMS</span><strong>${currentClients.length}</strong></article>
+      <article class="metric"><span>Терминалов Demir</span><strong>${terminalTotal}</strong></article>
+    `;
+    document.querySelector("#transactionsTable").innerHTML = `<tr><td colspan="7" class="muted">Сначала сформируйте отчет по периоду, чтобы увидеть транзакции</td></tr>`;
+    status.textContent = "Клиенты загружены. Наименования взяты из TMS.";
+  } catch (error) {
+    status.textContent = error.message;
+    status.classList.add("error");
+  }
+}
+
+function exportClients() {
+  window.location.href = "/api/clients?format=xlsx";
+}
+
+function openClientCard(clientId) {
+  activeClient = currentClients.find(client => client.id === clientId || client.orgName === clientId);
+  if (!activeClient) return;
+  currentReport = null;
+  document.querySelector("#clientDetail").classList.remove("hidden");
+  document.querySelector("#clientTitle").textContent = activeClient.name;
+  document.querySelector("#clientMeta").textContent = `${activeClient.orgName}: ${activeClient.terminals.length} терминал(ов)`;
+  document.querySelector("#status").textContent = "Выберите период и запросите отчет по выбранному клиенту.";
+  document.querySelector("#metrics").innerHTML = `
+    <article class="metric"><span>Наименование TMS</span><strong>${escapeHtml(activeClient.name)}</strong></article>
+    <article class="metric"><span>TMS</span><strong>${escapeHtml(activeClient.orgName)}</strong></article>
+    <article class="metric"><span>Терминалы</span><strong>${activeClient.terminals.length}</strong></article>
+  `;
+  document.querySelector("#clientsTable").innerHTML = `
+    <tr>
+      <td>${escapeHtml(activeClient.name)}</td>
+      <td>${escapeHtml(activeClient.orgName)}</td>
+      <td>${Number(activeClient.terminals.length || 0)}</td>
+      <td>0</td>
+      <td>0</td>
+      <td>${formatMoney(0)}</td>
+    </tr>
+  `;
+  document.querySelector("#transactionsTable").innerHTML = `<tr><td colspan="7" class="muted">Отчет по этой карточке еще не запрошен</td></tr>`;
+}
+
+function closeClientCard() {
+  activeClient = null;
+  currentReport = null;
+  document.querySelector("#clientDetail").classList.add("hidden");
+  document.querySelector("#status").textContent = "Выберите карточку ИП или сформируйте общий отчет.";
+  renderClients();
+  document.querySelector("#transactionsTable").innerHTML = `<tr><td colspan="7" class="muted">Нет данных</td></tr>`;
+}
+
+async function buildClientReport() {
+  if (!activeClient) return;
+  const status = document.querySelector("#status");
+  status.textContent = `Запрашиваем отчет по ${activeClient.name}...`;
+  status.classList.remove("error");
+  try {
+    currentReport = await requestJson(`/api/clients/${encodeURIComponent(activeClient.orgName)}/report?${reportParams().toString()}`);
+    renderReport();
+    status.textContent = `Отчет по ${activeClient.name} сформирован за период ${currentReport.period.from} - ${currentReport.period.to}.`;
+  } catch (error) {
+    status.textContent = error.message;
+    status.classList.add("error");
+  }
+}
+
+function exportClientReport() {
+  if (!activeClient) return;
+  const params = reportParams();
+  params.set("format", "csv");
+  window.location.href = `/api/clients/${encodeURIComponent(activeClient.orgName)}/report?${params.toString()}`;
+}
+
+function exportClientExcel() {
+  if (!activeClient) return;
+  const params = reportParams();
+  params.set("format", "xlsx");
+  window.location.href = `/api/clients/${encodeURIComponent(activeClient.orgName)}/report?${params.toString()}`;
+}
+
+function renderReport() {
+  const totals = currentReport?.totals || {};
+  const clientCount = currentReport?.client ? 1 : Number(totals.clients || 0);
+  const operationCount = Number(totals.cashlessSales || totals.transactions || 0);
+  const successfulCount = Number(totals.cashlessSales || totals.approved || 0);
+  const cashlessAmount = Number(totals.cashless || totals.cashlessAmount || 0);
+  document.querySelector("#metrics").innerHTML = `
+    <article class="metric"><span>Клиенты</span><strong>${clientCount}</strong></article>
+    <article class="metric"><span>Безнал операции</span><strong>${operationCount}</strong></article>
+    <article class="metric"><span>Успешные</span><strong class="ok">${successfulCount}</strong></article>
+    <article class="metric"><span>Безнал</span><strong>${formatMoney(cashlessAmount)}</strong></article>
+  `;
+  renderClients();
+  renderTransactions();
+}
+
+function renderClientCards() {
+  const query = document.querySelector("#cardSearch").value.trim().toLowerCase();
+  const rows = currentClients.filter(client => {
+    const haystack = `${client.name} ${client.orgName}`.toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  document.querySelector("#clientCards").innerHTML = rows.length ? rows.map(client => `
+    <button type="button" class="client-card" data-client-id="${escapeHtml(client.id)}">
+      <strong>${escapeHtml(client.name)}</strong>
+      <span>TMS: ${escapeHtml(client.orgName)}</span>
+      <span class="count">${Number(client.terminals.length || 0)} терминал(ов)</span>
+    </button>
+  `).join("") : `<p class="muted">Карточки ИП не найдены</p>`;
+}
+
+function renderClients() {
+  const query = document.querySelector("#search").value.trim().toLowerCase();
+  const reportRows = currentReport?.client
+    ? [{
+      client: currentReport.client,
+      count: currentReport.totals?.sales || 0,
+      approved: currentReport.totals?.sales || 0,
+      cashlessAmount: currentReport.totals?.cashless || 0
+    }]
+    : (currentReport?.byClient || currentClients.map(client => ({
+      client,
+      count: 0,
+      approved: 0,
+      cashlessAmount: 0
+    })));
+  const rows = reportRows.filter(row => {
+    const haystack = `${row.client.name} ${row.client.orgName}`.toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  document.querySelector("#clientsTable").innerHTML = rows.length ? rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.client.name)}</td>
+      <td>${escapeHtml(row.client.orgName)}</td>
+      <td>${Number(row.client.terminals.length || 0)}</td>
+      <td>${Number(row.count || 0)}</td>
+      <td>${Number(row.approved || 0)}</td>
+      <td>${formatMoney(row.cashlessAmount || 0)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" class="muted">Нет данных</td></tr>`;
+}
+
+function renderTransactions() {
+  if (currentReport?.type === "TSO") {
+    renderTsoRows(currentReport.units || []);
+    return;
+  }
+  const rows = currentReport?.transactions || [];
+  document.querySelector("#transactionsTable").innerHTML = rows.length ? rows.map(item => `
+    <tr>
+      <td>${formatDate(item.occurredAt)}</td>
+      <td>${escapeHtml(item.clientName)}</td>
+      <td>
+        ${escapeHtml(item.terminalName || item.unitId)}
+        <div class="muted">${escapeHtml([item.serialNumber, item.terminalId].filter(Boolean).join(" / "))}</div>
+      </td>
+      <td>${escapeHtml(item.type)}</td>
+      <td>${escapeHtml(item.status)}</td>
+      <td>${formatMoney(item.cashlessAmount)}</td>
+      <td>${escapeHtml([item.rrn, item.invoice, item.authId].filter(Boolean).join(" / ") || "-")}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="7" class="muted">Нет безналичных операций за выбранный период</td></tr>`;
+}
+
+function renderTsoRows(rows) {
+  document.querySelector("#transactionsTable").innerHTML = rows.length ? rows.map(item => `
+    <tr>
+      <td>${escapeHtml(item.unit_id || "-")}</td>
+      <td>${escapeHtml(item.terminal_id || "-")}</td>
+      <td>${escapeHtml(item.location || "-")}</td>
+      <td>${Number(item.approved_cashless_count || 0)}</td>
+      <td>${formatMoney(item.approved_cashless_amount || 0)}</td>
+      <td>${Number(item.errored_count || 0) + Number(item.declined_count || 0)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="7" class="muted">По TSO нет данных за выбранный период</td></tr>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+document.querySelector("#loginForm").addEventListener("submit", login);
+document.querySelector("#logoutButton").addEventListener("click", logout);
+const buildReportButton = document.querySelector("#buildReport");
+if (buildReportButton) buildReportButton.addEventListener("click", buildReport);
+document.querySelector("#exportReport").addEventListener("click", exportReport);
+document.querySelector("#loadClients").addEventListener("click", loadClients);
+document.querySelector("#exportClients").addEventListener("click", exportClients);
+document.querySelector("#buildClientReport").addEventListener("click", buildClientReport);
+document.querySelector("#exportClientReport").addEventListener("click", exportClientReport);
+document.querySelector("#exportClientExcel").addEventListener("click", exportClientExcel);
+document.querySelector("#backToCards").addEventListener("click", closeClientCard);
+document.querySelector("#search").addEventListener("input", renderClients);
+document.querySelector("#cardSearch").addEventListener("input", renderClientCards);
+document.querySelector("#clientCards").addEventListener("click", event => {
+  const card = event.target.closest("[data-client-id]");
+  if (card) openClientCard(card.dataset.clientId);
+});
+
+bootstrap();
