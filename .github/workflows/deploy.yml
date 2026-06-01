@@ -19,14 +19,28 @@ jobs:
           sudo apt-get install -y sshpass rsync
 
       - name: Trust host
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.SERVER_PORT }}" "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+          port="${SERVER_PORT:-22}"
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -T 20 -p "$port" "$SERVER_HOST" >> ~/.ssh/known_hosts; then
+              exit 0
+            fi
+            echo "ssh-keyscan failed on attempt $attempt; retrying..."
+            sleep 10
+          done
+          echo "Unable to trust SSH host on port $port"
+          exit 1
 
       - name: Deploy files
         env:
           SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
+          port="${SERVER_PORT:-22}"
           sshpass -e rsync -az --delete \
             --exclude ".git" \
             --exclude ".github" \
@@ -41,14 +55,16 @@ jobs:
             --exclude "android/app/build" \
             --exclude "android/local.properties" \
             --exclude ".deploy-tmp" \
-            -e "ssh -p ${{ secrets.SERVER_PORT }}" \
+            -e "ssh -p $port" \
             ./ "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}/"
 
       - name: Install and restart
         env:
           SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
-          sshpass -e ssh -p "${{ secrets.SERVER_PORT }}" "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
+          port="${SERVER_PORT:-22}"
+          sshpass -e ssh -p "$port" "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
             set -e
             cd "${{ secrets.DEPLOY_PATH }}"
             npm ci --omit=dev
