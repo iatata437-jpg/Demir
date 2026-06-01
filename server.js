@@ -427,10 +427,16 @@ function buildTsoWorkbook(report) {
 
 async function loadAllClientsTsoReport(range) {
   const clients = await loadProjectClients();
-  const reports = [];
-  for (const client of clients) {
-    reports.push(await loadClientTsoReport(client, range));
+  const reports = new Array(clients.length);
+  const queue = clients.map((client, index) => ({ client, index }));
+  const workerCount = Math.min(4, queue.length || 1);
+  async function runWorker() {
+    while (queue.length) {
+      const item = queue.shift();
+      reports[item.index] = await loadClientTsoReport(item.client, range);
+    }
   }
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
   const totals = reports.reduce((acc, report) => {
     acc.sales += Number(report.totals.sales || 0);
     acc.cashlessSales += Number(report.totals.cashlessSales || 0);

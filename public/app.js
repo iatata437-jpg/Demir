@@ -2,6 +2,9 @@ let currentUser = null;
 let currentReport = null;
 let currentClients = [];
 let activeClient = null;
+let summaryRefreshTimer = null;
+let summaryAutoRefreshTimer = null;
+let summaryRequestId = 0;
 
 const formatMoney = value => `${Number(value || 0).toLocaleString("ru-RU")} сом`;
 const formatDate = value => value ? new Date(value).toLocaleString("ru-RU") : "-";
@@ -35,6 +38,7 @@ function showApp(user) {
   document.querySelector("#app").classList.remove("hidden");
   document.querySelector("#userEmail").textContent = user.email;
   setDefaultDates();
+  startSummaryAutoRefresh();
   loadClients();
 }
 
@@ -79,6 +83,7 @@ async function logout() {
   currentReport = null;
   currentClients = [];
   activeClient = null;
+  clearInterval(summaryAutoRefreshTimer);
   showLogin();
 }
 
@@ -88,6 +93,96 @@ function reportParams() {
     from: document.querySelector("#fromDate").value,
     to: document.querySelector("#toDate").value
   });
+}
+
+function summaryParams() {
+  const today = formatDateOnly(new Date());
+  const fromInput = document.querySelector("#summaryFromDate");
+  const toInput = document.querySelector("#summaryToDate");
+  const from = fromInput.value || toInput.value || today;
+  const to = toInput.value || fromInput.value || today;
+  return new URLSearchParams({ from, to });
+}
+
+function setSummaryLiveState(text, state = "") {
+  const total = document.querySelector("#summaryLiveTotal");
+  total.textContent = text;
+  total.classList.toggle("loading", state === "loading");
+  total.classList.toggle("error", state === "error");
+}
+
+function renderSummaryReport(report) {
+  const totals = report?.totals || {};
+  const clientCount = Number(totals.clients || 0);
+  const operationCount = Number(totals.transactions || 0);
+  const successfulCount = Number(totals.approved || 0);
+  const cashlessAmount = Number(totals.cashlessAmount || 0);
+  currentReport = report;
+  currentClients = report.byClient.map(row => row.client);
+  document.querySelector("#metrics").innerHTML = `
+    <article class="metric"><span>Клиенты</span><strong>${clientCount}</strong></article>
+    <article class="metric"><span>Безнал операции</span><strong>${operationCount}</strong></article>
+    <article class="metric"><span>Успешные</span><strong class="ok">${successfulCount}</strong></article>
+    <article class="metric"><span>Безнал</span><strong>${formatMoney(cashlessAmount)}</strong></article>
+  `;
+  renderClients();
+}
+
+function buildSummaryReportFromTso(report) {
+  const byClient = (report.reports || []).map(item => ({
+    client: item.client,
+    count: Number(item.totals?.cashlessSales || 0),
+    approved: Number(item.totals?.cashlessSales || 0),
+    cashlessAmount: Number(item.totals?.cashless || 0)
+  }));
+  return {
+    period: report.period,
+    totals: {
+      clients: byClient.length,
+      transactions: Number(report.totals?.cashlessSales || 0),
+      approved: Number(report.totals?.cashlessSales || 0),
+      cashlessAmount: Number(report.totals?.cashless || 0)
+    },
+    byClient
+  };
+}
+
+async function refreshClientSummary({ silent = false } = {}) {
+  const requestId = ++summaryRequestId;
+  const params = summaryParams();
+  const from = params.get("from");
+  const to = params.get("to");
+  if (!silent) setSummaryLiveState("Считаем...", "loading");
+  try {
+    const tsoReport = await requestJson(`/api/tso-report?${params.toString()}`);
+    if (requestId !== summaryRequestId) return;
+    const report = buildSummaryReportFromTso(tsoReport);
+    activeClient = null;
+    document.querySelector("#clientDetail").classList.add("hidden");
+    renderSummaryReport(report);
+    setSummaryLiveState(`Безнал: ${formatMoney(report.totals.cashlessAmount || 0)}`);
+    document.querySelector("#status").textContent = `Онлайн-сводка по всем клиентам за период ${from} - ${to} обновлена.`;
+    document.querySelector("#status").classList.remove("error");
+  } catch (error) {
+    if (requestId !== summaryRequestId) return;
+    setSummaryLiveState("Ошибка расчета", "error");
+    document.querySelector("#status").textContent = error.message;
+    document.querySelector("#status").classList.add("error");
+  }
+}
+
+function scheduleClientSummaryRefresh() {
+  clearTimeout(summaryRefreshTimer);
+  summaryRefreshTimer = setTimeout(() => refreshClientSummary(), 350);
+}
+
+function startSummaryAutoRefresh() {
+  clearInterval(summaryAutoRefreshTimer);
+  summaryAutoRefreshTimer = setInterval(() => {
+    if (!document.querySelector("#app").classList.contains("hidden")) {
+      refreshClientSummary({ silent: true });
+    }
+  }, 60000);
 }
 
 async function buildReport() {
@@ -137,6 +232,7 @@ async function loadClients() {
     `;
     document.querySelector("#transactionsTable").innerHTML = `<tr><td colspan="7" class="muted">Сначала сформируйте отчет по периоду, чтобы увидеть транзакции</td></tr>`;
     status.textContent = "Клиенты загружены. Наименования взяты из TMS.";
+    refreshClientSummary({ silent: true });
   } catch (error) {
     status.textContent = error.message;
     status.classList.add("error");
@@ -330,6 +426,8 @@ document.querySelector("#exportClientReport").addEventListener("click", exportCl
 document.querySelector("#exportClientExcel").addEventListener("click", exportClientExcel);
 document.querySelector("#backToCards").addEventListener("click", closeClientCard);
 document.querySelector("#search").addEventListener("input", renderClients);
+document.querySelector("#summaryFromDate").addEventListener("change", scheduleClientSummaryRefresh);
+document.querySelector("#summaryToDate").addEventListener("change", scheduleClientSummaryRefresh);
 document.querySelector("#cardSearch").addEventListener("input", renderClientCards);
 document.querySelector("#clientCards").addEventListener("click", event => {
   const card = event.target.closest("[data-client-id]");

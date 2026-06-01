@@ -90,6 +90,17 @@
       <section class="panel">
         <div class="panel-head">
           <h2>Сводка по клиентам</h2>
+          <div class="summary-live-controls">
+            <label>
+              С
+              <input id="summaryFromDate" type="date" />
+            </label>
+            <label>
+              По
+              <input id="summaryToDate" type="date" />
+            </label>
+            <div class="summary-live-total" id="summaryLiveTotal">Безнал: 0 сом</div>
+          </div>
           <input id="search" type="search" placeholder="Поиск по клиенту или TMS" />
         </div>
         <div class="table-wrap">
