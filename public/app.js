@@ -373,9 +373,9 @@ function renderClients() {
   const reportRows = currentReport?.client
     ? [{
       client: currentReport.client,
-      count: currentReport.totals?.sales || 0,
-      approved: currentReport.totals?.sales || 0,
-      cashlessAmount: currentReport.totals?.cashless || 0
+      count: currentReport.totals?.cashlessSales || currentReport.totals?.transactions || 0,
+      approved: currentReport.totals?.cashlessSales || currentReport.totals?.approved || 0,
+      cashlessAmount: currentReport.totals?.cashless || currentReport.totals?.cashlessAmount || 0
     }]
     : (currentReport?.byClient || currentClients.map(client => ({
       client,
