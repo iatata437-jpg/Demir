@@ -425,6 +425,83 @@ function buildTsoWorkbook(report) {
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
 
+async function loadAllClientsTsoReport(range) {
+  const clients = await loadProjectClients();
+  const reports = [];
+  for (const client of clients) {
+    reports.push(await loadClientTsoReport(client, range));
+  }
+  const totals = reports.reduce((acc, report) => {
+    acc.sales += Number(report.totals.sales || 0);
+    acc.cashlessSales += Number(report.totals.cashlessSales || 0);
+    acc.cashless += Number(report.totals.cashless || 0);
+    acc.amount += Number(report.totals.amount || 0);
+    acc.connectionErrors += Number(report.totals.connectionErrors || 0);
+    acc.otherErrors += Number(report.totals.otherErrors || 0);
+    return acc;
+  }, {
+    sales: 0,
+    cashlessSales: 0,
+    cashless: 0,
+    amount: 0,
+    connectionErrors: 0,
+    otherErrors: 0
+  });
+  return {
+    project: PROJECT_ORG,
+    type: "TSO",
+    period: { from: range.fromValue, to: range.toValue },
+    clients,
+    reports,
+    totals
+  };
+}
+
+function buildAllClientsTsoWorkbook(report) {
+  const workbook = XLSX.utils.book_new();
+  const summaryRows = report.reports.map(item => ({
+    "Клиент": item.client.name,
+    "TMS": item.client.orgName,
+    "Терминалов": item.client.terminals.length,
+    "Период с": report.period.from,
+    "Период по": report.period.to,
+    "Безнал операций": item.totals.cashlessSales,
+    "Безнал": item.totals.cashless,
+    "Ошибки связи": item.totals.connectionErrors,
+    "Другие ошибки": item.totals.otherErrors
+  }));
+  summaryRows.push({
+    "Клиент": "Итого",
+    "TMS": "",
+    "Терминалов": report.clients.reduce((sum, client) => sum + Number(client.terminals.length || 0), 0),
+    "Период с": report.period.from,
+    "Период по": report.period.to,
+    "Безнал операций": report.totals.cashlessSales,
+    "Безнал": report.totals.cashless,
+    "Ошибки связи": report.totals.connectionErrors,
+    "Другие ошибки": report.totals.otherErrors
+  });
+  const unitRows = report.reports.flatMap(item => item.units.map(row => ({
+    "Клиент": item.client.name,
+    "TMS": item.client.orgName,
+    "Unit ID": row.unit_id || "",
+    "Terminal ID": row.terminal_id || "",
+    "Location": row.location || "",
+    "Currency": row.currency || "",
+    "Cashless Count": Number(row.approved_cashless_count || 0),
+    "Cashless Amount": Number(row.approved_cashless_amount || 0),
+    "Connection Errors": Number(row.errored_count || 0),
+    "Other Errors": Number(row.declined_count || 0),
+    "Voided Count": Number(row.voided_count || 0),
+    "Voided Amount": Number(row.voided_amount || 0),
+    "Rejected Count": Number(row.rejected_count || 0),
+    "Rejected Amount": Number(row.rejected_amount || 0)
+  })));
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), "Summary");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(unitRows), "TSO");
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+}
+
 async function generateReport(range) {
   const clients = await loadProjectClients();
   const transactionGroups = [];
@@ -472,6 +549,21 @@ async function handleApi(req, res, url) {
       res.writeHead(200, {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="demir-cashless-${report.period.from}-${report.period.to}.xlsx"`,
+        "Cache-Control": "no-store"
+      });
+      return res.end(buffer);
+    }
+    return sendJson(res, 200, report);
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/tso-report") {
+    const range = parseDateRange(url);
+    const report = await loadAllClientsTsoReport(range);
+    if (url.searchParams.get("format") === "xlsx") {
+      const buffer = buildAllClientsTsoWorkbook(report);
+      res.writeHead(200, {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="TSO_all_clients_${range.fromValue}_${range.toValue}.xlsx"`,
         "Cache-Control": "no-store"
       });
       return res.end(buffer);

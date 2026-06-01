@@ -107,8 +107,14 @@ async function buildReport() {
 
 function exportReport() {
   const params = reportParams();
-  params.set("format", "csv");
+  params.set("format", "xlsx");
   window.location.href = `/api/report?${params.toString()}`;
+}
+
+function exportAllTso() {
+  const params = reportParams();
+  params.set("format", "xlsx");
+  window.location.href = `/api/tso-report?${params.toString()}`;
 }
 
 async function loadClients() {
@@ -316,6 +322,7 @@ document.querySelector("#logoutButton").addEventListener("click", logout);
 const buildReportButton = document.querySelector("#buildReport");
 if (buildReportButton) buildReportButton.addEventListener("click", buildReport);
 document.querySelector("#exportReport").addEventListener("click", exportReport);
+document.querySelector("#exportAllTso").addEventListener("click", exportAllTso);
 document.querySelector("#loadClients").addEventListener("click", loadClients);
 document.querySelector("#exportClients").addEventListener("click", exportClients);
 document.querySelector("#buildClientReport").addEventListener("click", buildClientReport);
