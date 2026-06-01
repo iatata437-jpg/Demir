@@ -118,7 +118,7 @@ function renderSummaryReport(report) {
   const successfulCount = Number(totals.approved || 0);
   const cashlessAmount = Number(totals.cashlessAmount || 0);
   currentReport = report;
-  currentClients = report.byClient.map(row => row.client);
+  if (!activeClient) currentClients = report.byClient.map(row => row.client);
   document.querySelector("#metrics").innerHTML = `
     <article class="metric"><span>Клиенты</span><strong>${clientCount}</strong></article>
     <article class="metric"><span>Безнал операции</span><strong>${operationCount}</strong></article>
@@ -147,21 +147,49 @@ function buildSummaryReportFromTso(report) {
   };
 }
 
+function buildSummaryReportFromClientTso(report) {
+  return {
+    period: report.period,
+    client: report.client,
+    totals: {
+      clients: 1,
+      transactions: Number(report.totals?.cashlessSales || 0),
+      approved: Number(report.totals?.cashlessSales || 0),
+      cashlessAmount: Number(report.totals?.cashless || 0)
+    },
+    byClient: [{
+      client: report.client,
+      count: Number(report.totals?.cashlessSales || 0),
+      approved: Number(report.totals?.cashlessSales || 0),
+      cashlessAmount: Number(report.totals?.cashless || 0)
+    }]
+  };
+}
+
 async function refreshClientSummary({ silent = false } = {}) {
   const requestId = ++summaryRequestId;
   const params = summaryParams();
   const from = params.get("from");
   const to = params.get("to");
+  const selectedClient = activeClient;
   if (!silent) setSummaryLiveState("Считаем...", "loading");
   try {
-    const tsoReport = await requestJson(`/api/tso-report?${params.toString()}`);
+    const url = selectedClient
+      ? `/api/clients/${encodeURIComponent(selectedClient.orgName)}/report?${params.toString()}`
+      : `/api/tso-report?${params.toString()}`;
+    const tsoReport = await requestJson(url);
     if (requestId !== summaryRequestId) return;
-    const report = buildSummaryReportFromTso(tsoReport);
-    activeClient = null;
-    document.querySelector("#clientDetail").classList.add("hidden");
+    if (selectedClient && activeClient?.orgName !== selectedClient.orgName) return;
+    const report = selectedClient
+      ? buildSummaryReportFromClientTso(tsoReport)
+      : buildSummaryReportFromTso(tsoReport);
+    if (!selectedClient) document.querySelector("#clientDetail").classList.add("hidden");
     renderSummaryReport(report);
+    if (selectedClient) renderTsoRows(tsoReport.units || []);
     setSummaryLiveState(`Безнал: ${formatMoney(report.totals.cashlessAmount || 0)}`);
-    document.querySelector("#status").textContent = `Онлайн-сводка по всем клиентам за период ${from} - ${to} обновлена.`;
+    document.querySelector("#status").textContent = selectedClient
+      ? `Онлайн-сводка по ${selectedClient.name} за период ${from} - ${to} обновлена.`
+      : `Онлайн-сводка по всем клиентам за период ${from} - ${to} обновлена.`;
     document.querySelector("#status").classList.remove("error");
   } catch (error) {
     if (requestId !== summaryRequestId) return;
@@ -267,6 +295,7 @@ function openClientCard(clientId) {
     </tr>
   `;
   document.querySelector("#transactionsTable").innerHTML = `<tr><td colspan="7" class="muted">Отчет по этой карточке еще не запрошен</td></tr>`;
+  refreshClientSummary();
 }
 
 function closeClientCard() {
@@ -276,6 +305,7 @@ function closeClientCard() {
   document.querySelector("#status").textContent = "Выберите карточку ИП или сформируйте общий отчет.";
   renderClients();
   document.querySelector("#transactionsTable").innerHTML = `<tr><td colspan="7" class="muted">Нет данных</td></tr>`;
+  refreshClientSummary();
 }
 
 async function buildClientReport() {
