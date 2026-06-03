@@ -111,9 +111,15 @@ function setSummaryLiveState(text, state = "") {
   total.classList.toggle("error", state === "error");
 }
 
+function getReportTerminalCount(report) {
+  if (report?.client) return Number(report.client.terminals?.length || 0);
+  return (report?.byClient || []).reduce((sum, row) => sum + Number(row.client?.terminals?.length || 0), 0);
+}
+
 function renderSummaryReport(report) {
   const totals = report?.totals || {};
   const clientCount = Number(totals.clients || 0);
+  const terminalCount = getReportTerminalCount(report);
   const operationCount = Number(totals.transactions || 0);
   const successfulCount = Number(totals.approved || 0);
   const cashlessAmount = Number(totals.cashlessAmount || 0);
@@ -121,6 +127,7 @@ function renderSummaryReport(report) {
   if (!activeClient) currentClients = report.byClient.map(row => row.client);
   document.querySelector("#metrics").innerHTML = `
     <article class="metric"><span>Клиенты</span><strong>${clientCount}</strong></article>
+    <article class="metric"><span>Терминалы Demir</span><strong>${terminalCount}</strong></article>
     <article class="metric"><span>Безнал операции</span><strong>${operationCount}</strong></article>
     <article class="metric"><span>Успешные</span><strong class="ok">${successfulCount}</strong></article>
     <article class="metric"><span>Безнал</span><strong>${formatMoney(cashlessAmount)}</strong></article>
@@ -340,11 +347,13 @@ function exportClientExcel() {
 function renderReport() {
   const totals = currentReport?.totals || {};
   const clientCount = currentReport?.client ? 1 : Number(totals.clients || 0);
+  const terminalCount = getReportTerminalCount(currentReport);
   const operationCount = Number(totals.cashlessSales || totals.transactions || 0);
   const successfulCount = Number(totals.cashlessSales || totals.approved || 0);
   const cashlessAmount = Number(totals.cashless || totals.cashlessAmount || 0);
   document.querySelector("#metrics").innerHTML = `
     <article class="metric"><span>Клиенты</span><strong>${clientCount}</strong></article>
+    <article class="metric"><span>Терминалы Demir</span><strong>${terminalCount}</strong></article>
     <article class="metric"><span>Безнал операции</span><strong>${operationCount}</strong></article>
     <article class="metric"><span>Успешные</span><strong class="ok">${successfulCount}</strong></article>
     <article class="metric"><span>Безнал</span><strong>${formatMoney(cashlessAmount)}</strong></article>
