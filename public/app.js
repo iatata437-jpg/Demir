@@ -247,6 +247,12 @@ function exportAllTso() {
   window.location.href = `/api/tso-report?${params.toString()}`;
 }
 
+function exportSummaryTso() {
+  const params = summaryParams();
+  params.set("format", "xlsx");
+  window.location.href = `/api/tso-report?${params.toString()}`;
+}
+
 async function loadClients() {
   const status = document.querySelector("#status");
   status.textContent = "Загружаем клиентов проекта bank-demir из TMS...";
@@ -458,6 +464,7 @@ const buildReportButton = document.querySelector("#buildReport");
 if (buildReportButton) buildReportButton.addEventListener("click", buildReport);
 document.querySelector("#exportReport").addEventListener("click", exportReport);
 document.querySelector("#exportAllTso").addEventListener("click", exportAllTso);
+document.querySelector("#exportSummaryTso").addEventListener("click", exportSummaryTso);
 document.querySelector("#loadClients").addEventListener("click", loadClients);
 document.querySelector("#exportClients").addEventListener("click", exportClients);
 document.querySelector("#buildClientReport").addEventListener("click", buildClientReport);

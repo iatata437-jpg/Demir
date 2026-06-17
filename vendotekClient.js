@@ -5,6 +5,7 @@ class VendotekClient {
     this.password = options.password || "";
     this.apiKey = options.apiKey || "";
     this.autoGenerateApiKey = Boolean(options.autoGenerateApiKey);
+    this.requestTimeoutMs = Number(options.requestTimeoutMs || 15000);
     this.cookies = new Map();
     this.authPromise = null;
   }
@@ -140,18 +141,31 @@ class VendotekClient {
   }
 
   async requestText(path, options = {}) {
-    const response = await fetch(`${this.host}${path}`, {
-      redirect: "manual",
-      ...options,
-      headers: {
-        Accept: "application/json",
-        Origin: this.host,
-        Referer: `${this.host}/`,
-        "User-Agent": "Mozilla/5.0",
-        "X-Requested-With": "XMLHttpRequest",
-        ...(options.headers || {})
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    let response;
+    try {
+      response = await fetch(`${this.host}${path}`, {
+        redirect: "manual",
+        ...options,
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          Origin: this.host,
+          Referer: `${this.host}/`,
+          "User-Agent": "Mozilla/5.0",
+          "X-Requested-With": "XMLHttpRequest",
+          ...(options.headers || {})
+        }
+      });
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error(`Vendotek timeout after ${this.requestTimeoutMs}ms`);
       }
-    });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     this.storeCookies(response.headers);
 

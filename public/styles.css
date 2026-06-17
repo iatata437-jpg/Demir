@@ -272,6 +272,11 @@ p,
   min-width: 140px;
 }
 
+.summary-export-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 .summary-live-controls input {
   width: 100%;
 }

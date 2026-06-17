@@ -121,7 +121,8 @@ function createVendotekClient() {
     email: process.env.VENDOTEK_EMAIL,
     password: process.env.VENDOTEK_PASSWORD,
     apiKey: process.env.VENDOTEK_API_KEY,
-    autoGenerateApiKey: process.env.VENDOTEK_AUTO_GENERATE_API_KEY === "true"
+    autoGenerateApiKey: process.env.VENDOTEK_AUTO_GENERATE_API_KEY === "true",
+    requestTimeoutMs: process.env.VENDOTEK_REQUEST_TIMEOUT_MS
   });
 }
 
@@ -346,7 +347,7 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function withRetry(factory, attempts = 2) {
+async function withRetry(factory, attempts = 1) {
   let lastError = null;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     try {
