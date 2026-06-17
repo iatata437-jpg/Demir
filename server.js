@@ -13,7 +13,12 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const PROJECT_ORG = process.env.VENDOTEK_PROJECT_ORG || "bank-demir";
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(24).toString("hex");
+const CLIENTS_CACHE_TTL_MS = Number(process.env.CLIENTS_CACHE_TTL_MS || 10 * 60 * 1000);
+const TSO_REPORT_CACHE_TTL_MS = Number(process.env.TSO_REPORT_CACHE_TTL_MS || 10 * 60 * 1000);
+const REPORT_CONCURRENCY = Math.max(1, Number(process.env.REPORT_CONCURRENCY || 16));
 const sessions = new Map();
+let projectClientsCache = null;
+const allClientsTsoCache = new Map();
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -190,6 +195,10 @@ function normalizeTransaction(raw, client, terminalsByUnit) {
 }
 
 async function loadProjectClients() {
+  if (projectClientsCache && projectClientsCache.expiresAt > Date.now()) {
+    return cloneProjectClients(projectClientsCache.clients);
+  }
+
   const api = createVendotekClient();
   const env = await api.fetchEnv();
   const allowedOrgs = new Set(Array.isArray(env?.distributees) ? env.distributees : []);
@@ -234,7 +243,18 @@ async function loadProjectClients() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, runWorker));
-  return clients;
+  projectClientsCache = {
+    expiresAt: Date.now() + CLIENTS_CACHE_TTL_MS,
+    clients
+  };
+  return cloneProjectClients(clients);
+}
+
+function cloneProjectClients(clients) {
+  return clients.map(client => ({
+    ...client,
+    terminals: (client.terminals || []).map(terminal => ({ ...terminal }))
+  }));
 }
 
 function buildClientsWorkbook(clients) {
@@ -290,8 +310,7 @@ async function loadClientTransactions(client, range) {
   return Array.from(byId.values()).sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
 }
 
-async function loadClientTsoReport(client, range) {
-  const api = createVendotekClient();
+async function loadClientTsoReport(client, range, api = createVendotekClient()) {
   const tso = await api.fetchTsoReport(client.orgName, range.fromValue, range.toValue);
   const units = (Array.isArray(tso?.units) ? tso.units : [])
     .filter(row => Number(row.approved_cashless_count || 0) > 0 || Number(row.approved_cashless_amount || 0) > 0);
@@ -306,6 +325,38 @@ async function loadClientTsoReport(client, range) {
     total: [total],
     totals: total
   };
+}
+
+function emptyClientTsoReport(client, range, error) {
+  const total = summarizeTso([], []);
+  return {
+    project: PROJECT_ORG,
+    type: "TSO",
+    typeName: "TSO: безнал",
+    period: { from: range.fromValue, to: range.toValue },
+    client,
+    units: [],
+    total: [total],
+    totals: total,
+    error: error.message || String(error)
+  };
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withRetry(factory, attempts = 2) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    try {
+      return await factory();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await wait(600 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 function summarizeTso(units, total) {
@@ -426,14 +477,26 @@ function buildTsoWorkbook(report) {
 }
 
 async function loadAllClientsTsoReport(range) {
+  const cacheKey = `${range.fromValue}:${range.toValue}`;
+  const cached = allClientsTsoCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.report;
+  }
+
   const clients = await loadProjectClients();
+  const api = createVendotekClient();
+  await api.ensureAuth();
   const reports = new Array(clients.length);
   const queue = clients.map((client, index) => ({ client, index }));
-  const workerCount = Math.min(4, queue.length || 1);
+  const workerCount = Math.min(REPORT_CONCURRENCY, queue.length || 1);
   async function runWorker() {
     while (queue.length) {
       const item = queue.shift();
-      reports[item.index] = await loadClientTsoReport(item.client, range);
+      try {
+        reports[item.index] = await withRetry(() => loadClientTsoReport(item.client, range, api));
+      } catch (error) {
+        reports[item.index] = emptyClientTsoReport(item.client, range, error);
+      }
     }
   }
   await Promise.all(Array.from({ length: workerCount }, runWorker));
@@ -453,7 +516,7 @@ async function loadAllClientsTsoReport(range) {
     connectionErrors: 0,
     otherErrors: 0
   });
-  return {
+  const report = {
     project: PROJECT_ORG,
     type: "TSO",
     period: { from: range.fromValue, to: range.toValue },
@@ -461,6 +524,13 @@ async function loadAllClientsTsoReport(range) {
     reports,
     totals
   };
+  if (!reports.some(item => item.error)) {
+    allClientsTsoCache.set(cacheKey, {
+      expiresAt: Date.now() + TSO_REPORT_CACHE_TTL_MS,
+      report
+    });
+  }
+  return report;
 }
 
 function buildAllClientsTsoWorkbook(report) {
@@ -476,6 +546,9 @@ function buildAllClientsTsoWorkbook(report) {
     "Ошибки связи": item.totals.connectionErrors,
     "Другие ошибки": item.totals.otherErrors
   }));
+  summaryRows.forEach((row, index) => {
+    row["TMS Error"] = report.reports[index]?.error || "";
+  });
   summaryRows.push({
     "Клиент": "Итого",
     "TMS": "",
@@ -510,10 +583,16 @@ function buildAllClientsTsoWorkbook(report) {
 
 async function generateReport(range) {
   const clients = await loadProjectClients();
-  const transactionGroups = [];
-  for (const client of clients) {
-    transactionGroups.push(await loadClientTransactions(client, range));
+  const transactionGroups = new Array(clients.length);
+  const queue = clients.map((client, index) => ({ client, index }));
+  const workerCount = Math.min(REPORT_CONCURRENCY, queue.length || 1);
+  async function runWorker() {
+    while (queue.length) {
+      const item = queue.shift();
+      transactionGroups[item.index] = await loadClientTransactions(item.client, range);
+    }
   }
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
   return buildReport(clients, transactionGroups.flat(), range);
 }
 

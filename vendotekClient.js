@@ -6,6 +6,7 @@ class VendotekClient {
     this.apiKey = options.apiKey || "";
     this.autoGenerateApiKey = Boolean(options.autoGenerateApiKey);
     this.cookies = new Map();
+    this.authPromise = null;
   }
 
   async fetchOrganizations() {
@@ -73,6 +74,17 @@ class VendotekClient {
   }
 
   async ensureAuth() {
+    if (this.apiKey) return;
+    if (this.authPromise) return this.authPromise;
+    this.authPromise = this.signIn();
+    try {
+      await this.authPromise;
+    } finally {
+      this.authPromise = null;
+    }
+  }
+
+  async signIn() {
     if (this.apiKey) return;
     if (!this.email || !this.password) {
       throw new Error("Не указан VENDOTEK_API_KEY или логин/пароль Vendotek");
